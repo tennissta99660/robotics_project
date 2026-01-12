@@ -172,8 +172,8 @@ python3 main.py --mem_size=1000000 --env_name="Hopper-v3" --interval=100 --do_tr
     │   └── skill8.png
     └── r_z.png
 ```
-1. _Brain_ dir consists of the neural network structure and the agent decision-making core.
-2. _Common_ consists of minor codes that are common for most RL codes and do auxiliary tasks like logging and... .
+1. _Brain_ dir consists the neural network structure and the agent decision-making core.
+2. _Common_ consists utilies that are common in RL programs and do auxiliary tasks like logging and... .
 3. _main.py_ is the core module of the code that manages all other parts and makes the agent interact with the environment.
 
 ## Reference
