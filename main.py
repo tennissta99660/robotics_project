@@ -1,9 +1,9 @@
-import gym
+import gymnasium as gym
 from Brain import SACAgent
 from Common import Play, Logger, get_params
 import numpy as np
 from tqdm import tqdm
-import mujoco_py
+
 
 
 def concat_state_latent(s, z_, n):
@@ -40,9 +40,9 @@ if __name__ == "__main__":
             agent.hard_update_target_network()
             min_episode = episode
             np.random.set_state(np_rng_state)
-            env.np_random.set_state(env_rng_states[0])
-            env.observation_space.np_random.set_state(env_rng_states[1])
-            env.action_space.np_random.set_state(env_rng_states[2])
+            env.np_random.bit_generator.state = env_rng_states[0]
+            env.observation_space.np_random.bit_generator.state = env_rng_states[1]
+            env.action_space.np_random.bit_generator.state = env_rng_states[2]
             agent.set_rng_states(torch_rng_state, random_rng_state)
             print("Keep training from previous run.")
 
@@ -50,15 +50,14 @@ if __name__ == "__main__":
             min_episode = 0
             last_logq_zs = 0
             np.random.seed(params["seed"])
-            env.seed(params["seed"])
-            env.observation_space.seed(params["seed"])
+            env.reset(seed=params["seed"])
             env.action_space.seed(params["seed"])
             print("Training from scratch.")
 
         logger.on()
         for episode in tqdm(range(1 + min_episode, params["max_n_episodes"] + 1)):
             z = np.random.choice(params["n_skills"], p=p_z)
-            state = env.reset()
+            state, _ = env.reset()  # fix: unpack (obs, info)
             state = concat_state_latent(state, z, params["n_skills"])
             episode_reward = 0
             logq_zses = []
@@ -67,7 +66,8 @@ if __name__ == "__main__":
             for step in range(1, 1 + max_n_steps):
 
                 action = agent.choose_action(state)
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, terminated, truncated, _ = env.step(action)  # fix: 5 return values
+                done = terminated or truncated  # fix: combine terminal conditions
                 next_state = concat_state_latent(next_state, z, params["n_skills"])
                 agent.store(state, z, done, action, next_state)
                 logq_zs = agent.train()
@@ -81,16 +81,16 @@ if __name__ == "__main__":
                     break
 
             logger.log(episode,
-                       episode_reward,
-                       z,
-                       sum(logq_zses) / len(logq_zses),
-                       step,
-                       np.random.get_state(),
-                       env.np_random.get_state(),
-                       env.observation_space.np_random.get_state(),
-                       env.action_space.np_random.get_state(),
-                       *agent.get_rng_states(),
-                       )
+           episode_reward,
+           z,
+           sum(logq_zses) / len(logq_zses),
+           step,
+           np.random.get_state(),
+           env.np_random.bit_generator.state,
+           env.observation_space.np_random.bit_generator.state,
+           env.action_space.np_random.bit_generator.state,
+           *agent.get_rng_states(),
+           )
 
     else:
         logger.load_weights()
