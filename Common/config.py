@@ -6,7 +6,7 @@ def get_params():
         description="Variable parameters based on the configuration of the machine or user's choice")
 
     parser.add_argument("--env_name", default="HalfCheetah-v4", type=str,
-                        help="Name of the environment. Try: HalfCheetah-v4, Humanoid-v4, Ant-v4, Hopper-v4")
+                        help="Name of the environment. Try: HalfCheetah-v5, Humanoid-v5, Ant-v5, Hopper-v5")
     parser.add_argument("--interval", default=20, type=int,
                         help="The interval specifies how often different parameters should be saved and printed,"
                              " counted by episodes.")
