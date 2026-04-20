@@ -12,7 +12,11 @@ class Logger:
     def __init__(self, agent, **config):
         self.config = config
         self.agent = agent
-        self.log_dir = self.config["env_name"][:-3] + "/" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        # FIX: original used env_name[:-3] to strip "-v2" (3 chars).
+        # Works for v4 too ("-v4" is also 3 chars), but fragile for names
+        # like "-v10". Using rstrip + rsplit is more robust:
+        env_base = self.config["env_name"].rsplit("-", 1)[0]   # e.g. "HalfCheetah"
+        self.log_dir = env_base + "/" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.start_time = 0
         self.duration = 0
         self.running_logq_zs = 0
@@ -28,7 +32,7 @@ class Logger:
     def _create_wights_folder(dir):
         if not os.path.exists("Checkpoints"):
             os.mkdir("Checkpoints")
-        os.mkdir("Checkpoints/" + dir)
+        os.makedirs("Checkpoints/" + dir, exist_ok=True)  # FIX: use makedirs for nested dirs
 
     def _log_params(self):
         with SummaryWriter("Logs/" + self.log_dir) as writer:
@@ -109,9 +113,10 @@ class Logger:
                    "Checkpoints/" + self.log_dir + "/params.pth")
 
     def load_weights(self):
-        model_dir = glob.glob("Checkpoints/" + self.config["env_name"][:-3] + "/")
+        env_base = self.config["env_name"].rsplit("-", 1)[0]
+        model_dir = glob.glob("Checkpoints/" + env_base + "/*/")
         model_dir.sort()
-        checkpoint = torch.load(model_dir[-1] + "/params.pth")
+        checkpoint = torch.load(model_dir[-1] + "params.pth", weights_only=False)
         self.log_dir = model_dir[-1].split(os.sep)[-1]
         self.agent.policy_network.load_state_dict(checkpoint["policy_network_state_dict"])
         self.agent.q_value_network1.load_state_dict(checkpoint["q_value_network1_state_dict"])
