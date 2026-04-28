@@ -1,7 +1,5 @@
 # Unsupervised Skill Discovery using DIAYN + Soft Actor-Critic
 
-> **ECE357 Project** — Moulik Tokas, Kshitij Sengar, Apoorv Kumar
-
 An implementation of [**DIAYN** (Diversity Is All You Need)](https://arxiv.org/abs/1802.06070) built on top of [**Soft Actor-Critic (SAC)**](https://arxiv.org/abs/1801.01290) for unsupervised skill discovery in continuous control environments.
 
 The agent learns a diverse set of distinguishable behaviours **without any extrinsic reward signal**, driven purely by an information-theoretic objective that maximises the mutual information between a latent skill variable and the states visited by the policy.
