@@ -44,7 +44,7 @@ robotics_project/
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/robotics_project.git
+git clone https://github.com/tennissta99660/robotics_project.git
 cd robotics_project
 
 # Create a virtual environment (recommended)
