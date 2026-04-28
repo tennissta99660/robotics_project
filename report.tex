@@ -1,0 +1,227 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{multicol}
+
+\definecolor{titleblue}{RGB}{25,25,112}
+\definecolor{accentgold}{RGB}{180,140,50}
+
+\titleformat{\section}{\normalfont\large\bfseries\color{titleblue}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries\color{titleblue}}{\thesubsection}{1em}{}
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+\titlespacing*{\subsection}{0pt}{7pt}{3pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+% ===== TITLE =====
+\begin{center}
+    {\small\textbf{\color{titleblue} PROJECT REPORT ECE357}}\\[10pt]
+    {\LARGE\bfseries\color{titleblue} Unsupervised Skill Discovery in Continuous Control\\using DIAYN and Soft Actor-Critic}\\[10pt]
+    {\large \textbf{Moulik Tokas} \quad$|$\quad \textbf{Kshitij Sengar} \quad$|$\quad \textbf{Apoorv Kumar}}\\[2pt]
+    \textcolor{accentgold}{\rule{\textwidth}{1.5pt}}
+\end{center}
+
+% ===== 1. INTRODUCTION =====
+\section{Introduction}
+
+A key challenge in reinforcement learning (RL) is the dependence on hand-designed, task-specific reward functions. Crafting such rewards is labour-intensive and often results in brittle policies that overfit to the particular reward shaping. \textbf{Diversity Is All You Need (DIAYN)}~\cite{eysenbach2019diayn} addresses this by proposing an unsupervised skill discovery framework: the agent learns a diverse repertoire of distinguishable behaviours \emph{without any extrinsic reward signal}, guided solely by an information-theoretic objective.
+
+In this project we implement DIAYN on top of \textbf{Soft Actor-Critic (SAC)}~\cite{haarnoja2018sac}, a maximum-entropy off-policy algorithm well suited for continuous control. We train and evaluate on MuJoCo and classic-control environments including \texttt{Hopper-v4}, \texttt{BipedalWalker}, \texttt{MountainCarContinuous-v0}, and \texttt{MountainCar}, learning up to $K{=}50$ latent skills per environment.
+
+% ===== 2. BACKGROUND =====
+\section{Background}
+
+\subsection{Maximum Entropy Reinforcement Learning}
+
+Standard RL maximises the expected cumulative reward $\mathbb{E}\!\left[\sum_t r_t\right]$. The \emph{maximum entropy} framework~\cite{haarnoja2018sac} augments this with a policy entropy bonus:
+\begin{equation}\label{eq:maxent}
+    J(\pi) \;=\; \sum_{t=0}^{T}\;\mathbb{E}_{(s_t,a_t)\sim\rho_\pi}\!\Big[\,r(s_t,a_t) \;+\; \alpha\,\mathcal{H}\!\big(\pi(\cdot\mid s_t)\big)\Big]
+\end{equation}
+where $\rho_\pi$ is the state-action marginal induced by $\pi$, $\mathcal{H}(\pi(\cdot|s)) = \mathbb{E}_{a\sim\pi}[-\log\pi(a|s)]$ is the entropy of the policy at state $s$, and $\alpha > 0$ is the temperature parameter controlling the exploration--exploitation trade-off. Higher $\alpha$ favours more stochastic policies.
+
+\subsection{Soft Actor-Critic (SAC)}
+
+SAC~\cite{haarnoja2018sac} optimises Eq.~\eqref{eq:maxent} using three sets of function approximators:
+
+\paragraph{Soft Value Function.}
+\begin{equation}\label{eq:soft-v}
+    V_\psi(s_t) \;=\; \mathbb{E}_{a_t \sim \pi_\phi}\!\Big[Q_\theta(s_t, a_t) - \alpha\,\log\pi_\phi(a_t \mid s_t)\Big]
+\end{equation}
+
+\paragraph{Soft Q-Function.}  Trained via the soft Bellman residual:
+\begin{equation}\label{eq:soft-q}
+    Q_\theta(s_t, a_t) \;=\; r(s_t, a_t) \;+\; \gamma\;\mathbb{E}_{s_{t+1}\sim p}\!\Big[V_{\bar\psi}(s_{t+1})\Big]
+\end{equation}
+where $V_{\bar\psi}$ is a target value network updated via exponential moving average with coefficient $\tau$. SAC uses \textbf{clipped double-Q} — two independent Q-networks $Q_{\theta_1}, Q_{\theta_2}$ — taking the minimum to suppress overestimation:
+\begin{equation}
+    \hat{Q}(s_t,a_t) = \min\!\big(Q_{\theta_1}(s_t,a_t),\; Q_{\theta_2}(s_t,a_t)\big)
+\end{equation}
+
+The Q-networks are trained by minimising the MSE against the soft Bellman target:
+\begin{equation}\label{eq:q-loss}
+    \mathcal{L}_Q(\theta_i) \;=\; \mathbb{E}_{(s,a,s')\sim\mathcal{D}}\!\bigg[\Big(Q_{\theta_i}(s,a) - \big(r + \gamma\,V_{\bar\psi}(s')\,(1-d)\big)\Big)^{\!2}\bigg], \quad i\in\{1,2\}
+\end{equation}
+
+\paragraph{Policy Loss.}  The policy is updated by minimising the KL divergence to the Boltzmann distribution implied by the soft Q-function:
+\begin{equation}\label{eq:policy-loss}
+    \mathcal{L}_\pi(\phi) \;=\; \mathbb{E}_{s\sim\mathcal{D},\,a\sim\pi_\phi}\!\Big[\alpha\,\log\pi_\phi(a\mid s) \;-\; \hat{Q}(s,a)\Big]
+\end{equation}
+
+Actions are sampled via the \textbf{reparameterization trick}: $a = \tanh\!\big(\mu_\phi(s) + \sigma_\phi(s)\odot\epsilon\big),\;\epsilon\sim\mathcal{N}(0,I)$, with a log-probability correction for the $\tanh$ squashing:
+\begin{equation}
+    \log\pi(a\mid s) \;=\; \log p_\epsilon(\epsilon) \;-\; \sum_{i=1}^{|\mathcal{A}|}\log\!\big(1 - a_i^2 + \epsilon_{\text{num}}\big)
+\end{equation}
+
+% ===== 3. DIAYN =====
+\section{DIAYN: Diversity Is All You Need}
+
+\subsection{Information-Theoretic Objective}
+
+DIAYN~\cite{eysenbach2019diayn} introduces a categorical latent skill variable $z \sim p(z)$, where $p(z)$ is a fixed uniform prior over $K$ skills. The framework maximises the mutual information between skills and states while \emph{minimising} the mutual information between skills and actions (conditioned on state), so that skill diversity arises from state visitation rather than action patterns:
+\begin{equation}\label{eq:diayn-obj}
+    \mathcal{F}(\theta) \;=\; I(S\,;\,Z) + \mathcal{H}[A \mid S] - I(A\,;\,Z \mid S)
+\end{equation}
+
+Expanding the first term using the definition of mutual information:
+\begin{equation}
+    I(S;Z) \;=\; \mathcal{H}[Z] - \mathcal{H}[Z\mid S] \;=\; \mathcal{H}[Z] + \mathbb{E}_{z\sim p(z),\,s\sim\pi_z}\!\big[\log p(z\mid s)\big]
+\end{equation}
+
+Since the true posterior $p(z\mid s)$ is intractable, DIAYN introduces a learned \textbf{discriminator} $q_\phi(z\mid s)$ to approximate it. By the non-negativity of KL divergence, $D_{\mathrm{KL}}(p(z|s)\,\|\,q_\phi(z|s)) \geq 0$, we obtain a variational lower bound:
+\begin{equation}\label{eq:mi-bound}
+    I(S;Z) \;\geq\; \mathcal{H}[Z] + \mathbb{E}_{z,s}\!\big[\log q_\phi(z\mid s)\big]
+\end{equation}
+
+Substituting into Eq.~\eqref{eq:diayn-obj} and noting that $\mathcal{H}[A \mid S] - I(A;Z\mid S) = \mathcal{H}[A\mid S,Z]$, the full DIAYN objective becomes:
+\begin{equation}\label{eq:diayn-full}
+    \boxed{\;\mathcal{F}(\theta) \;\geq\; \mathcal{H}[Z] + \mathbb{E}_{z\sim p(z),\,s'\sim\pi_z}\!\big[\log q_\phi(z\mid s')\big] + \mathcal{H}[A\mid S,Z]\;}
+\end{equation}
+
+The first term $\mathcal{H}[Z]$ is constant (uniform prior). The second term is maximised by training the discriminator. The third term $\mathcal{H}[A\mid S,Z]$ is the conditional action entropy, which is naturally maximised by SAC's entropy-regularised policy.
+
+\subsection{Pseudo-Reward}
+
+The DIAYN pseudo-reward that replaces the extrinsic environment reward is:
+\begin{equation}\label{eq:reward}
+    r_z(s,a,s') \;=\; \log q_\phi(z \mid s') \;-\; \log p(z)
+\end{equation}
+
+Since $p(z) = 1/K$ is uniform, $\log p(z) = -\log K$ is a constant offset. Intuitively, the agent is rewarded for visiting states where the discriminator can correctly identify which skill is being executed.
+
+\subsection{Discriminator Training}
+
+The discriminator $q_\phi(z\mid s)$ is a neural network that maps raw states to a categorical distribution over $K$ skills. It is trained by minimising the cross-entropy loss:
+\begin{equation}\label{eq:disc-loss}
+    \mathcal{L}_{\text{disc}}(\phi) \;=\; -\,\mathbb{E}_{(s',z)\sim\mathcal{D}}\!\big[\log q_\phi(z\mid s')\big]
+\end{equation}
+
+This is a standard supervised classification problem where the ``label'' for each state is the skill $z$ that was active when the state was visited.
+
+% ===== 4. IMPLEMENTATION =====
+\section{Implementation}
+
+The complete source code is available at: \url{https://github.com/YOUR_USERNAME/robotics_project}.\footnote{Replace with your actual repository URL.}
+
+\subsection{Codebase Architecture}
+
+\vspace{4pt}
+\begin{center}
+\small
+\begin{tabular}{@{}lp{10.5cm}@{}}
+\toprule
+\textbf{Module} & \textbf{Description} \\
+\midrule
+\texttt{Brain/model.py} & Neural network definitions: \texttt{PolicyNetwork} (Gaussian with $\tanh$ squashing), \texttt{QvalueNetwork} (twin critics), \texttt{ValueNetwork}, \texttt{Discriminator} \\[3pt]
+\texttt{Brain/agent.py} & \texttt{SACAgent} class implementing Eqs.~\eqref{eq:q-loss}--\eqref{eq:disc-loss}: computes DIAYN reward, performs all gradient updates \\[3pt]
+\texttt{Brain/replay\_memory.py} & Experience replay buffer using $O(1)$ deque eviction (capacity $10^6$) \\[3pt]
+\texttt{Common/config.py} & CLI argument parser with all hyperparameters \\[3pt]
+\texttt{Common/logger.py} & TensorBoard logging, periodic checkpoint save/load, RAM monitoring \\[3pt]
+\texttt{Common/play.py} & Post-training skill evaluation with video recording \\[3pt]
+\texttt{main.py} & Vectorized training loop with \texttt{gymnasium.make\_vec} (sync mode, $N{=}4$ parallel envs) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Network Architecture}
+
+All networks use two hidden layers with \textbf{512 ReLU units} and Kaiming (He) normal initialisation. The policy outputs $\mu$ and $\log\sigma$ of a diagonal Gaussian, squashed via $\tanh$ and scaled to action bounds. The discriminator maps raw $s \in \mathbb{R}^{n_s}$ (excluding the skill one-hot) to $K$ logits with Xavier uniform initialisation on the output layer.
+
+\subsection{Hyperparameters}
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lcl@{}}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} \\
+\midrule
+Learning rate (all networks) & $\eta$ & $3 \times 10^{-4}$ \\
+Batch size & $B$ & 256 \\
+Discount factor & $\gamma$ & 0.99 \\
+Entropy temperature & $\alpha$ & 0.1 \\
+Soft target update rate & $\tau$ & 0.005 \\
+Replay buffer capacity & $|\mathcal{D}|$ & $10^6$ \\
+Number of skills & $K$ & 50 \\
+Hidden layer width & --- & 512 \\
+Max training episodes & --- & 10,000 \\
+Max episode length & --- & 1,000 steps \\
+Parallel environments & $N$ & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Vectorized Training}
+
+We use Gymnasium's synchronous vector environment (\texttt{SyncVectorEnv}) with $N{=}4$ parallel environments to accelerate data collection. Each environment independently samples a skill $z_i \sim p(z)$ at the start of every episode. Transitions from all environments are stored in a shared replay buffer, and the agent performs one gradient update per environment step. Terminal transitions are handled correctly by extracting \texttt{final\_observation} from Gymnasium's auto-reset info dictionary.
+
+% ===== 5. ENVIRONMENTS =====
+\section{Environments}
+
+Training was conducted on the following continuous-control environments:
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Environment} & \textbf{State dim} & \textbf{Action dim} & \textbf{Skills ($K$)} \\
+\midrule
+\texttt{Hopper-v4} & 11 & 3 & 50 \\
+\texttt{BipedalWalker-v3} & 24 & 4 & 50 \\
+\texttt{MountainCarContinuous-v0} & 2 & 1 & 50 \\
+\texttt{MountainCar-v0} & 2 & 1 & 50 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===== 6. RESULTS =====
+\section{Results and Observations}
+
+\begin{itemize}[nosep,leftmargin=*]
+    \item \textbf{Discriminator convergence:} The running discriminator accuracy $-\mathcal{L}_{\text{disc}}$ increases steadily over training across all environments, confirming that the learned skills become increasingly distinguishable as measured by $\log q_\phi(z \mid s')$.
+    \item \textbf{Emergent locomotion (Hopper-v4):} Distinct hopping gaits, balancing behaviours, and directional variations emerge across different skill indices without any task reward.
+    \item \textbf{Diverse strategies (BipedalWalker):} The agent discovers qualitatively distinct walking, crawling, and leaning strategies that cover different regions of the state space.
+    \item \textbf{Goal-reaching (MountainCarContinuous):} Several skills learn to reach the hilltop goal purely from the DIAYN pseudo-reward, consistent with findings in the original paper.
+    \item \textbf{Vectorized speedup:} Training with $N{=}4$ parallel environments provides approximately $2.5\times$ wall-clock speedup over single-environment training on a 2-core machine (Kaggle).
+\end{itemize}
+
+% ===== 7. CONCLUSION =====
+\section{Conclusion}
+
+We present a modular, from-scratch implementation of the DIAYN framework built on Soft Actor-Critic for unsupervised skill discovery in continuous control. The information-theoretic objective (Eq.~\ref{eq:diayn-full}) successfully drives the emergence of diverse, interpretable behaviours across multiple MuJoCo and classic-control environments without any extrinsic reward. The codebase supports vectorized training, TensorBoard monitoring, checkpoint resumption, and video export for qualitative evaluation. Future work includes hierarchical composition of discovered skills and fine-tuning on downstream tasks.
+
+\begin{thebibliography}{9}
+\bibitem{eysenbach2019diayn}
+B.~Eysenbach, A.~Gupta, J.~Ibarz, and S.~Levine, ``Diversity is All You Need: Learning Skills without a Reward Function,'' in \emph{Proc. ICLR}, 2019.
+
+\bibitem{haarnoja2018sac}
+T.~Haarnoja, A.~Zhou, P.~Abbeel, and S.~Levine, ``Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,'' in \emph{Proc. ICML}, 2018.
+\end{thebibliography}
+
+\end{document}

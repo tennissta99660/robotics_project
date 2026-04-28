@@ -5,9 +5,9 @@ def get_params():
     parser = argparse.ArgumentParser(
         description="Variable parameters based on the configuration of the machine or user's choice")
 
-    parser.add_argument("--env_name", default="HalfCheetah-v4", type=str,
-                        help="Name of the environment. Try: HalfCheetah-v4, Humanoid-v4, Ant-v4, Hopper-v4")
-    parser.add_argument("--interval", default=20, type=int,
+    parser.add_argument("--env_name", default="HalfCheetah-v5", type=str,
+                        help="Name of the environment. Try: HalfCheetah-v5, Humanoid-v5, Ant-v4, Hopper-v4")
+    parser.add_argument("--interval", default=100, type=int,
                         help="The interval specifies how often different parameters should be saved and printed,"
                              " counted by episodes.")
     parser.add_argument("--do_train", action="store_true",
